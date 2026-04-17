@@ -1,41 +1,33 @@
 # ============================================================
 # Dockerfile - OpenClaw con soporte completo para Skills Python
 # Base: ghcr.io/hostinger/hvps-openclaw:latest
+# Nota: la imagen base usa Homebrew como gestor de paquetes
 # ============================================================
 FROM ghcr.io/hostinger/hvps-openclaw:latest
 
-# Correr como root para instalar paquetes
-USER root
-
-# ── 1. Actualizar APT e instalar dependencias del sistema ────────────────────
+# ── 1. Instalar dependencias del sistema vía Homebrew ────────────────────────
 # Python core, utilidades, PDF, multimedia, red
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 \
-    python3-pip \
-    python3-venv \
-    python3-dev \
+# Nombres de paquetes Homebrew (≠ apt): poppler-utils→poppler,
+#   libopus-dev→opus, dnsutils→bind
+RUN brew install \
+    python \
     curl \
     wget \
     git \
     jq \
-    unzip \
-    zip \
-    ca-certificates \
     gnupg \
-    poppler-utils \
+    poppler \
     pandoc \
     ffmpeg \
-    libopus-dev \
-    dnsutils \
-    iputils-ping \
-    && rm -rf /var/lib/apt/lists/*
+    opus \
+    bind
 
 # ── 2. Alias python → python3 ────────────────────────────────────────────────
-RUN ln -sf /usr/bin/python3 /usr/bin/python
+RUN brew link python --overwrite 2>/dev/null || true
 
-# ── 3. Actualizar pip e instalar librerías Python más comunes en Skills ───────
+# ── 3. Instalar librerías Python más comunes en Skills ───────────────────────
 # LLM, scraping, datos/archivos, utilidades, vector DB, testing
-RUN pip3 install --no-cache-dir --break-system-packages \
+RUN pip3 install --no-cache-dir \
     openai \
     anthropic \
     langchain \
@@ -65,7 +57,7 @@ RUN pip3 install --no-cache-dir --break-system-packages \
 RUN python3 -m playwright install chromium --with-deps || true
 
 # ── 5. Crear directorio de skills personalizado en el workspace ───────────────
-RUN mkdir -p /root/.openclaw/workspace/skills
+RUN mkdir -p ~/.openclaw/workspace/skills
 
 # ── 6. Variables de entorno útiles para skills que invocan Python ────────────
 ENV PYTHONUNBUFFERED=1 \
