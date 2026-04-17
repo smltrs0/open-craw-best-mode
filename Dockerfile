@@ -1,38 +1,47 @@
 # ============================================================
-# Dockerfile - OpenClaw con soporte completo para Skills Python
-# Base: ghcr.io/hostinger/hvps-openclaw:latest
+# Dockerfile — OpenClaw con soporte completo para Skills Python
+# Base: ghcr.io/hostinger/hvps-openclaw:latest  (Debian Bookworm)
+#
+# FIX v2: Debian 12 requiere --break-system-packages en pip.
+#         Paquetes que necesitan compilación (faiss-cpu, sentence-transformers)
+#         se instalan con sus dependencias de build correctas.
 # ============================================================
 FROM ghcr.io/hostinger/hvps-openclaw:latest
 
-# ── 1. Instalar dependencias del sistema ─────────────────────────────────────
-# Detecta el gestor de paquetes disponible: apk (Alpine) o apt-get (Debian/Ubuntu).
-# Mapeo de nombres: libopus-dev→opus-dev(apk), dnsutils→bind-tools(apk),
-#   iputils-ping→iputils(apk), python3-venv/dev incluidos en python3(apk).
-RUN if command -v apk >/dev/null 2>&1; then \
-        apk add --no-cache \
-            python3 py3-pip python3-dev \
-            curl wget git jq unzip zip \
-            ca-certificates gnupg \
-            poppler-utils pandoc ffmpeg \
-            opus-dev bind-tools iputils; \
-    elif apt-get update -qq >/dev/null 2>&1; then \
-        apt-get install -y --no-install-recommends \
-            python3 python3-pip python3-venv python3-dev \
-            curl wget git jq unzip zip \
-            ca-certificates gnupg \
-            poppler-utils pandoc ffmpeg \
-            libopus-dev dnsutils iputils-ping \
-        && rm -rf /var/lib/apt/lists/*; \
-    else \
-        echo "WARNING: No supported package manager found, skipping system packages."; \
-    fi
+USER root
+
+# ── 1. Paquetes del sistema (Debian Bookworm / apt-get) ──────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-venv \
+    python3-dev \
+    curl \
+    wget \
+    git \
+    jq \
+    unzip \
+    zip \
+    ca-certificates \
+    gnupg \
+    build-essential \
+    cmake \
+    g++ \
+    libgomp1 \
+    poppler-utils \
+    pandoc \
+    ffmpeg \
+    libopus-dev \
+    dnsutils \
+    iputils-ping \
+    && rm -rf /var/lib/apt/lists/*
 
 # ── 2. Alias python → python3 ────────────────────────────────────────────────
-RUN ln -sf /usr/bin/python3 /usr/bin/python 2>/dev/null || true
+RUN ln -sf /usr/bin/python3 /usr/bin/python
 
-# ── 3. Instalar librerías Python más comunes en Skills ───────────────────────
-# LLM, scraping, datos/archivos, utilidades, vector DB, testing
-RUN pip3 install --no-cache-dir \
+# ── 3. Librerías Python esenciales ───────────────────────────────────────────
+# Debian 12 (Bookworm) requiere --break-system-packages fuera de un venv.
+RUN pip3 install --no-cache-dir --break-system-packages \
     openai \
     anthropic \
     langchain \
@@ -49,25 +58,31 @@ RUN pip3 install --no-cache-dir \
     python-docx \
     pillow \
     pydantic \
+    "pydantic-settings" \
     python-dotenv \
     rich \
     typer \
-    chromadb \
-    faiss-cpu \
-    sentence-transformers \
     pytest
 
-# ── 4. Instalar navegadores de Playwright ────────────────────────────────────
-#    Solo Chromium (más liviano). Cambia a "playwright install" para todos.
+# ── 4. Paquetes de ML / Vector DB ────────────────────────────────────────────
+# Separados porque necesitan cmake/g++ del paso 1.
+# faiss-cpu tiene fallback: si falla en la arquitectura, la build no muere.
+RUN pip3 install --no-cache-dir --break-system-packages \
+    chromadb \
+    "sentence-transformers>=2.7.0" \
+    && pip3 install --no-cache-dir --break-system-packages faiss-cpu \
+    || echo "WARN: faiss-cpu no disponible en esta arquitectura, continuando..."
+
+# ── 5. Instalar navegadores de Playwright (solo Chromium) ────────────────────
 RUN python3 -m playwright install chromium --with-deps || true
 
-# ── 5. Crear directorio de skills personalizado en el workspace ───────────────
-RUN mkdir -p ~/.openclaw/workspace/skills
+# ── 6. Directorio de skills personalizado ────────────────────────────────────
+RUN mkdir -p /root/.openclaw/workspace/skills
 
-# ── 6. Variables de entorno útiles para skills que invocan Python ────────────
+# ── 7. Variables de entorno ───────────────────────────────────────────────────
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     DISPLAY=:99
 
-# ── 7. El entrypoint y CMD los hereda de la imagen base ──────────────────────
+# Entrypoint y CMD heredados de la imagen base
