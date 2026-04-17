@@ -8,13 +8,12 @@ FROM ghcr.io/hostinger/hvps-openclaw:latest
 USER root
 
 # ── 1. Actualizar APT e instalar dependencias del sistema ────────────────────
+# Python core, utilidades, PDF, multimedia, red
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # --- Python core ---
     python3 \
     python3-pip \
     python3-venv \
     python3-dev \
-    # --- Utilidades de sistema que las Skills más usadas necesitan ---
     curl \
     wget \
     git \
@@ -23,16 +22,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zip \
     ca-certificates \
     gnupg \
-    # --- Herramientas de archivos / PDF ---
     poppler-utils \
     pandoc \
-    # --- Multimedia (skills de audio/video) ---
     ffmpeg \
     libopus-dev \
-    # --- Navegador headless (skills de browser/Playwright) ---
-    chromium \
-    chromium-driver \
-    # --- Acceso a red / APIs ---
     dnsutils \
     iputils-ping \
     && rm -rf /var/lib/apt/lists/*
@@ -41,35 +34,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN ln -sf /usr/bin/python3 /usr/bin/python
 
 # ── 3. Actualizar pip e instalar librerías Python más comunes en Skills ───────
+# LLM, scraping, datos/archivos, utilidades, vector DB, testing
 RUN pip3 install --no-cache-dir --break-system-packages \
-    # --- LLM / Agentes ---
     openai \
     anthropic \
     langchain \
     langchain-openai \
     langchain-anthropic \
-    # --- Web scraping / automatización ---
     requests \
     httpx \
     beautifulsoup4 \
     playwright \
-    # --- Datos / archivos ---
     pandas \
     openpyxl \
     pypdf \
     pdfplumber \
     python-docx \
     pillow \
-    # --- Utilidades generales ---
     pydantic \
     python-dotenv \
     rich \
     typer \
-    # --- Vector DB / memoria ---
     chromadb \
     faiss-cpu \
     sentence-transformers \
-    # --- Dev / testing ---
     pytest
 
 # ── 4. Instalar navegadores de Playwright ────────────────────────────────────
