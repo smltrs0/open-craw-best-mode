@@ -1,56 +1,48 @@
 # ============================================================
-# Dockerfile — OpenClaw con soporte completo para Skills Python
-# Base: ghcr.io/hostinger/hvps-openclaw:latest  (Debian Bookworm)
+# Dockerfile — OpenClaw + Python (extensión de imagen Hostinger)
+# Base: ghcr.io/hostinger/hvps-openclaw:latest
 #
-# FIX v2: Debian 12 requiere --break-system-packages en pip.
-#         Paquetes que necesitan compilación (faiss-cpu, sentence-transformers)
-#         se instalan con sus dependencias de build correctas.
+# Estrategia: cada apt-get es independiente con || true
+# para que UN paquete que no exista no mate todo el build.
 # ============================================================
 FROM ghcr.io/hostinger/hvps-openclaw:latest
 
 USER root
 
-# ── 1. Paquetes del sistema (Debian Bookworm / apt-get) ──────────────────────
-RUN apt-get update && apt-get install -y --no-install-recommends \
+ENV DEBIAN_FRONTEND=noninteractive
+
+# ── 1. Solo lo esencial y garantizado en cualquier Debian/Ubuntu ──────────────
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
-    python3-venv \
     python3-dev \
+    build-essential \
+    git \
     curl \
     wget \
-    git \
-    jq \
-    unzip \
-    zip \
     ca-certificates \
-    gnupg \
-    build-essential \
-    cmake \
-    g++ \
-    libgomp1 \
-    poppler-utils \
-    pandoc \
-    ffmpeg \
-    libopus-dev \
-    dnsutils \
-    iputils-ping \
     && rm -rf /var/lib/apt/lists/*
 
-# ── 2. Alias python → python3 ────────────────────────────────────────────────
+# ── 2. Paquetes opcionales — cada uno aislado, falla silenciosamente ──────────
+RUN apt-get update -qq && apt-get install -y --no-install-recommends ffmpeg     2>/dev/null || true && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -qq && apt-get install -y --no-install-recommends libopus-dev 2>/dev/null || true && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -qq && apt-get install -y --no-install-recommends poppler-utils 2>/dev/null || true && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -qq && apt-get install -y --no-install-recommends pandoc      2>/dev/null || true && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -qq && apt-get install -y --no-install-recommends jq unzip zip 2>/dev/null || true && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -qq && apt-get install -y --no-install-recommends cmake g++ libgomp1 2>/dev/null || true && rm -rf /var/lib/apt/lists/*
+
+# ── 3. Alias python → python3 ────────────────────────────────────────────────
 RUN ln -sf /usr/bin/python3 /usr/bin/python
 
-# ── 3. Librerías Python esenciales ───────────────────────────────────────────
-# Debian 12 (Bookworm) requiere --break-system-packages fuera de un venv.
+# ── 4. pip — paquetes core garantizados ──────────────────────────────────────
+# Intentamos con --break-system-packages primero (Debian 12),
+# si falla probamos sin él (Debian 11 / Ubuntu más antiguo)
 RUN pip3 install --no-cache-dir --break-system-packages \
     openai \
     anthropic \
-    langchain \
-    langchain-openai \
-    langchain-anthropic \
     requests \
     httpx \
     beautifulsoup4 \
-    playwright \
     pandas \
     openpyxl \
     pypdf \
@@ -61,28 +53,57 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     "pydantic-settings" \
     python-dotenv \
     rich \
-    typer \
+    pytest \
+    2>/dev/null \
+    || pip3 install --no-cache-dir \
+    openai \
+    anthropic \
+    requests \
+    httpx \
+    beautifulsoup4 \
+    pandas \
+    openpyxl \
+    pypdf \
+    pdfplumber \
+    python-docx \
+    pillow \
+    pydantic \
+    "pydantic-settings" \
+    python-dotenv \
+    rich \
     pytest
 
-# ── 4. Paquetes de ML / Vector DB ────────────────────────────────────────────
-# Separados porque necesitan cmake/g++ del paso 1.
-# faiss-cpu tiene fallback: si falla en la arquitectura, la build no muere.
+# ── 5. LangChain — separado por si alguna sub-dependencia falla ───────────────
 RUN pip3 install --no-cache-dir --break-system-packages \
-    chromadb \
-    "sentence-transformers>=2.7.0" \
-    && pip3 install --no-cache-dir --break-system-packages faiss-cpu \
-    || echo "WARN: faiss-cpu no disponible en esta arquitectura, continuando..."
+    "langchain>=0.2" langchain-openai langchain-anthropic \
+    || pip3 install --no-cache-dir \
+    "langchain>=0.2" langchain-openai langchain-anthropic \
+    || echo "WARN: langchain no instalado"
 
-# ── 5. Instalar navegadores de Playwright (solo Chromium) ────────────────────
-RUN python3 -m playwright install chromium --with-deps || true
+# ── 6. Playwright ─────────────────────────────────────────────────────────────
+RUN pip3 install --no-cache-dir --break-system-packages playwright \
+    || pip3 install --no-cache-dir playwright \
+    || echo "WARN: playwright no instalado"
+RUN python3 -m playwright install chromium --with-deps || echo "WARN: chromium no instalado"
 
-# ── 6. Directorio de skills personalizado ────────────────────────────────────
-RUN mkdir -p /root/.openclaw/workspace/skills
+# ── 7. ML/Vector — muy opcionales, fallan silenciosamente ────────────────────
+RUN pip3 install --no-cache-dir --break-system-packages chromadb \
+    || pip3 install --no-cache-dir chromadb \
+    || echo "WARN: chromadb no instalado"
+RUN pip3 install --no-cache-dir --break-system-packages faiss-cpu \
+    || echo "WARN: faiss-cpu no disponible en esta arquitectura"
+RUN pip3 install --no-cache-dir --break-system-packages "sentence-transformers>=2.7.0" \
+    || echo "WARN: sentence-transformers no instalado"
 
-# ── 7. Variables de entorno ───────────────────────────────────────────────────
+# ── 8. Directorio de skills ───────────────────────────────────────────────────
+RUN mkdir -p /root/.openclaw/workspace/skills 2>/dev/null || \
+    mkdir -p /home/node/.openclaw/workspace/skills && \
+    chown -R node:node /home/node/.openclaw 2>/dev/null || true
+
+# ── 9. Variables de entorno ───────────────────────────────────────────────────
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
-    DISPLAY=:99
+    DEBIAN_FRONTEND=
 
 # Entrypoint y CMD heredados de la imagen base
